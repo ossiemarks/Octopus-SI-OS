@@ -5025,6 +5025,10 @@
             }
           ]
         }
+      },
+      "client_metadata": {
+        "schema_version": 1,
+        "module": "interface://world_provider_claude_cli/packages/client-metadata.cjs"
       }
     },
     "residual_ambient": {

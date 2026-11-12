@@ -347,7 +347,7 @@ function PreviewStep() {
       </h1>
       <p className="welcome-body">
         Octopus is early and moving fast. Expect rough edges, breaking changes, and ideas still finding their shape. It
-        runs locally, with your own ChatGPT account.
+        runs locally, with your own model provider account.
       </p>
       <div className="welcome-support">
         <span className="welcome-support-label">Follow along or support the project</span>

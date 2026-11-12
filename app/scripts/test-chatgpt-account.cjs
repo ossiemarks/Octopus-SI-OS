@@ -816,14 +816,9 @@ test("completed Home uses checked local receipts offline and cancels proof acros
     currentSetup = () => new Promise(resolve => { releaseNew = resolve; }); home = "/new-pending"; configured = false; await show();
     await act(async () => releaseOld(await store.readCurrent())); assert.equal(shell(), null);
     accountResult = new Error("workspace routing discovery timed out"); currentSetup = async () => null;
-    await act(() => releaseNew(null)); await waitFor(() => document.body.textContent.includes("ChatGPT account unavailable"));
-    assert.equal(catalogReads, 0); assert.equal(shell(), null);
-    accountResult = { ...signedOut, octopusHome: home }; await act(() => accountChanged());
-    assert.match(document.body.textContent, /Sign in to ChatGPT/); assert.doesNotMatch(document.body.textContent, /ChatGPT account unavailable/);
-    accountResult = signedIn; await act(() => accountChanged());
-    assert.match(document.body.textContent, /observation belongs to another Home/); assert.equal(catalogReads, 0);
-    accountResult = { ...signedIn, octopusHome: home }; await act(() => accountChanged());
-    await waitFor(() => document.body.textContent.includes("Review setup")); assert.equal(shell(), null); assert.equal(catalogReads, 1);
+    await act(() => releaseNew(null)); await waitFor(() => document.body.textContent.includes("Review setup"));
+    assert.equal(shell(), null); assert.equal(catalogReads, 1);
+    assert.doesNotMatch(document.body.textContent, /ChatGPT account unavailable|Sign in to ChatGPT/);
     configured = true; home = "/missing-aggregate"; accountResult = { ...signedIn, octopusHome: home }; await show();
     await waitFor(() => document.body.textContent.includes("Workspace verification is incomplete")); assert.equal(shell(), null);
     assert.equal(setupWrites, 0);

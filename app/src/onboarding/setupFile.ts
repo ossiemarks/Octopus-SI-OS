@@ -197,6 +197,7 @@ export function draftFromSetupFile(
     projects,
     capabilities,
     updatedAt: timestamp,
+    ...(base.packId === undefined ? {} : { packId: base.packId }),
     ...model,
   });
 }
@@ -207,6 +208,7 @@ export type HomeSetupSources = {
   applications: unknown;
   drivers: unknown;
   installedExtensionIds: ReadonlySet<string>;
+  setupPackId: string | null;
 };
 
 export function setupFileFromHome(sources: HomeSetupSources): SetupFile {
@@ -235,8 +237,10 @@ export function setupFileFromHome(sources: HomeSetupSources): SetupFile {
   });
   const fileIds = projectFileIds(draftProjects);
   const packs = rows(record(sources.localPackages, "Local packages").packs).filter((pack) => pack.workspace_setup !== undefined);
-  if (packs.length !== 1) throw new Error("This Home's setup pack could not be identified.");
-  const pack = packs[0];
+  const setupPackId = sources.setupPackId ?? null;
+  const matches = setupPackId === null ? packs : packs.filter((pack) => pack.id === setupPackId);
+  if (matches.length !== 1) throw new Error("This Home's setup pack could not be identified.");
+  const pack = matches[0];
   const setup = record(pack.workspace_setup, "The setup pack");
   const projectSelectable = new Set([
     ...rows(setup.project_defaults).map((row) => String(row.package_id)),

@@ -23,6 +23,7 @@ export type WorkspaceSetupCapability = {
 };
 
 export type WorkspaceSetupDraft = {
+  packId?: string;
   providerModel?: string;
   reasoningEffort?: string;
   serviceTier?: string;
@@ -231,6 +232,7 @@ export function replaceWorkspaceSetupPreset(
   return validateWorkspaceSetupDraft({
     ...next,
     operationId: draft.operationId,
+    ...(draft.packId !== undefined ? { packId: draft.packId } : {}),
     ...(draft.providerModel !== undefined ? { providerModel: draft.providerModel } : {}),
     ...(draft.serviceTier !== undefined ? { serviceTier: draft.serviceTier } : {}),
     ...(draft.reasoningEffort !== undefined ? { reasoningEffort: draft.reasoningEffort } : {}),
@@ -241,9 +243,9 @@ export function replaceWorkspaceSetupPreset(
 export function validateWorkspaceSetupDraft(value: unknown): WorkspaceSetupDraft {
   const record = exactRecord(
     value,
-    ["schemaVersion", "operationId", "preset", "step", "spaceName", "spaceGoal", "projects", "capabilities", "updatedAt", "providerModel", "reasoningEffort", "serviceTier"],
+    ["schemaVersion", "operationId", "preset", "step", "spaceName", "spaceGoal", "projects", "capabilities", "updatedAt", "packId", "providerModel", "reasoningEffort", "serviceTier"],
     "Workspace setup draft",
-    ["providerModel", "reasoningEffort", "serviceTier"],
+    ["packId", "providerModel", "reasoningEffort", "serviceTier"],
   );
   if (record.schemaVersion !== 1) throw new Error("Workspace setup draft has an unsupported schema version");
   const preset = requiredPreset(record.preset);
@@ -271,6 +273,7 @@ export function validateWorkspaceSetupDraft(value: unknown): WorkspaceSetupDraft
     projects,
     capabilities,
     updatedAt,
+    ...(record.packId !== undefined ? { packId: requiredId(record.packId, "Selected setup pack") } : {}),
     ...(record.providerModel !== undefined ? { providerModel: requiredText(record.providerModel, "Selected model", 256) } : {}),
     ...(record.serviceTier !== undefined ? { serviceTier: record.serviceTier as string } : {}),
     ...(record.reasoningEffort !== undefined ? { reasoningEffort: record.reasoningEffort as string } : {}),

@@ -25,6 +25,7 @@ async function main() {
     await normalLifecycle(path.join(temporary, "normal"));
     await readWhileApplying(path.join(temporary, "live-progress"));
     await explicitSignInBoundary(path.join(temporary, "sign-in"));
+    await probeOnlyAccountBoundary(path.join(temporary, "account-probe"));
     await checkpointEphemeralOwnerCandidate(path.join(temporary, "owner-candidate"));
     await currentOperationRecovery(path.join(temporary, "current"));
     await refuseSecondUnfinishedOperation(path.join(temporary, "singleton"));
@@ -345,6 +346,26 @@ async function readWhileApplying(root) {
   assert.equal((await reopened.readCurrent()).status, "complete");
   assert.equal(reopenedProgress.at(-1).phase, "sealed", "the returning window receives completion");
   assert.deepEqual(await readOwnerState(ownerState), Object.fromEntries(STEPS.map(step => [step, 1])));
+}
+
+async function probeOnlyAccountBoundary(root) {
+  const operationId = "workspace_account_probe_001";
+  const statePath = path.join(root, "owners.json");
+  const ownerSet = owners(statePath);
+  const provider = ownerSet.provider.apply;
+  let signIns = 0;
+  ownerSet.provider.apply = async (...args) => { signIns++; return provider(...args); };
+  const store = createClientSetupStore({ root: path.join(root, "setup-state"), owners: ownerSet });
+  await store.begin({ operationId, plan: setupPlan(operationId) });
+  const unverified = await store.resume({ operationId, stopBefore: "provider_sign_in" });
+  assert.equal(unverified.status, "in_progress");
+  assert.equal(unverified.steps.find(step => step.step === "provider").state, "pending");
+  assert.ok(unverified.steps.filter(step => step.step !== "provider").every(step => step.state === "complete"));
+  assert.equal(signIns, 0, "a probe-only resume never starts provider sign-in");
+  await fs.writeFile(statePath, `${JSON.stringify({ ...(await readOwnerState(statePath)), provider: 1 }, null, 2)}\n`, "utf8");
+  const verified = await store.resume({ operationId, stopBefore: "provider_sign_in" });
+  assert.equal(verified.status, "complete", "an account that is already readable completes setup");
+  assert.equal(signIns, 0);
 }
 
 async function explicitSignInBoundary(root) {

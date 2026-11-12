@@ -171,7 +171,7 @@ declare global {
       clientSetupRead(request: { operationId: string }): Promise<OctopusClientSetupState | null>;
       clientSetupReadCurrent(): Promise<OctopusClientSetupState | null>;
       clientSetupBegin(request: OctopusClientSetupBeginRequest): Promise<OctopusClientSetupState>;
-      clientSetupResume(request: { operationId: string; stopBefore?: "provider" }): Promise<OctopusClientSetupState>;
+      clientSetupResume(request: { operationId: string; stopBefore?: "provider" | "provider_sign_in" }): Promise<OctopusClientSetupState>;
       mutateScheduledInterface(request: OctopusScheduledMutationRequest): Promise<OctopusScheduledMutationOutcome>;
       mutateApplicationPrivateConfiguration(request: OctopusApplicationPrivateConfigurationMutation): Promise<OctopusApplicationPrivateConfigurationOutcome>;
       applicationConnectionProbe(request: { applicationId: string }): Promise<OctopusApplicationConnectionProbe>;

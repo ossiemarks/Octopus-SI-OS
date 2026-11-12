@@ -54,8 +54,12 @@ export type WorkspaceSetupApplyState = {
   error: string;
 };
 
+type WorkspaceSetupProviderChoice = { packId: string; label: string };
+
 type Props = {
   provider: OctopusProviderInterface | null;
+  providerChoices: WorkspaceSetupProviderChoice[];
+  selectedPackId: string;
   agentPresets: WorkspaceSetupAgentPreset[];
   draft: WorkspaceSetupDraft;
   catalog: WorkspaceSetupCatalogCapability[];
@@ -103,6 +107,8 @@ const KIND_LABELS: Record<WorkspaceSetupCapabilityKind, string> = {
 
 export function WorkspaceSetupOverlay({
   provider,
+  providerChoices,
+  selectedPackId,
   agentPresets,
   draft,
   catalog,
@@ -221,6 +227,8 @@ export function WorkspaceSetupOverlay({
                 onChange={onChange}
                 onRetry={onRetryCatalog}
                 provider={provider}
+                providerChoices={providerChoices}
+                selectedPackId={selectedPackId}
               />
             ) : (
               <>
@@ -261,7 +269,7 @@ export function WorkspaceSetupOverlay({
               {activeStep === "review" ? "Set up Octopus" : "Continue"}
             </button>
           ) : applyState.state === "awaiting_sign_in" ? (
-            <button className="welcome-next" type="button" onClick={() => void onSignIn()}>Sign in with ChatGPT</button>
+            <button className="welcome-next" type="button" onClick={() => void onSignIn()}>{`Sign in to ${provider?.label || "your model provider"}`}</button>
           ) : applyState.state === "failed" ? (
             <button className="welcome-next" type="button" onClick={() => void onApply(draft)}>Try again</button>
           ) : (
@@ -402,6 +410,11 @@ function ProjectRow({
   );
 }
 
+function withSetupPack(draft: WorkspaceSetupDraft, packId: string): WorkspaceSetupDraft {
+  const { providerModel: _model, reasoningEffort: _effort, serviceTier: _tier, ...rest } = draft;
+  return { ...rest, packId };
+}
+
 function CapabilitiesStep({
   catalog,
   draft,
@@ -410,6 +423,8 @@ function CapabilitiesStep({
   onChange,
   onRetry,
   provider,
+  providerChoices,
+  selectedPackId,
 }: {
   catalog: WorkspaceSetupCatalogCapability[];
   draft: WorkspaceSetupDraft;
@@ -418,6 +433,8 @@ function CapabilitiesStep({
   onChange: (draft: WorkspaceSetupDraft) => void;
   onRetry: () => void;
   provider: OctopusProviderInterface | null;
+  providerChoices: WorkspaceSetupProviderChoice[];
+  selectedPackId: string;
 }) {
   if (loading) return <p className="setup-note">Loading available capabilities…</p>;
   if (!catalog.length) {
@@ -433,6 +450,19 @@ function CapabilitiesStep({
   const selections = new Map(draft.capabilities.map((capability) => [`${capability.kind}:${capability.id}`, capability]));
   return (
     <div className="setup-list">
+      {providerChoices.length > 1 ? (
+        <div className="setup-row setup-row-static">
+          <span className="setup-row-name">Model provider</span>
+          <select
+            aria-label="Model provider"
+            className="setup-select"
+            onChange={(event) => onChange(withSetupPack(draft, event.target.value))}
+            value={selectedPackId}
+          >
+            {providerChoices.map((choice) => <option key={choice.packId} value={choice.packId}>{choice.label}</option>)}
+          </select>
+        </div>
+      ) : null}
       <div className="setup-row setup-row-static">
         <span className="setup-row-name">Model for Home</span>
         <select

@@ -38,8 +38,6 @@ import {
 } from "../../projectionClient";
 import { useProjectionStructureGeneration } from "../../projectionLive";
 import { useChatgptAccount } from "../../account/useChatgptAccount";
-import { ChatGptSignInGate } from "./ChatGptSignInGate";
-import { chatgptSignInCompleted } from "../../onboarding/chatgptSignIn";
 import { OcButton } from "../../design-system/components";
 import { appToast } from "../../toasts";
 import { OctopusLoadingLogo, OctopusLoadingState } from "../OctopusLoadingLogo";
@@ -139,6 +137,7 @@ type DraftState = {
 type CatalogResult = {
   catalog: WorkspaceSetupCatalogCapability[];
   pack: WorkspacePack | null;
+  packs: WorkspacePack[];
   error: string;
   warning: string;
 };
@@ -172,13 +171,20 @@ const APPLY_IDLE: WorkspaceSetupApplyState = {
   error: "",
 };
 
-const AWAITING_SIGN_IN: WorkspaceSetupApplyState = {
-  state: "awaiting_sign_in",
-  label: "Your space is ready. Connect ChatGPT.",
-  detail: "Continue with your ChatGPT account to start working with Home. No API key is needed.",
-  percent: null,
-  error: "",
-};
+function providerName(pack: WorkspacePack | null | undefined): string {
+  return pack?.setupProvider?.label || "your model provider";
+}
+
+function awaitingSignIn(pack: WorkspacePack | null | undefined): WorkspaceSetupApplyState {
+  const name = providerName(pack);
+  return {
+    state: "awaiting_sign_in",
+    label: `Your space is ready. Connect ${name}.`,
+    detail: `Sign in to ${name} to start working with Home. Octopus verifies the account before Home opens.`,
+    percent: null,
+    error: "",
+  };
+}
 
 const SETUP_FILES = { open: openSetupFile, save: saveSetupFile };
 
@@ -240,9 +246,7 @@ function WorkspaceHomeGate({ runtimeHome, children }: Pick<Props, "runtimeHome" 
   return <WorkspaceAccountSetupGate runtimeHome={runtimeHome} setup={snapshot.clientSetup}>{children}</WorkspaceAccountSetupGate>;
 }
 
-function WorkspaceAccountSetupGate({ runtimeHome, children, setup }: Pick<Props, "runtimeHome" | "children"> & { setup: OctopusClientSetupState | null }) {
-  const account = useChatgptAccount();
-  if (setup?.status !== "in_progress" && (!account.account?.signedIn || account.account.octopusHome !== runtimeHome)) return <ChatGptSignInGate />;
+function WorkspaceAccountSetupGate({ children, setup }: Pick<Props, "runtimeHome" | "children"> & { setup: OctopusClientSetupState | null }) {
   return <WorkspaceSetupFlow accessProfile="live" initialSetup={setup}>{children}</WorkspaceSetupFlow>;
 }
 
@@ -259,6 +263,8 @@ function WorkspaceSetupFlow({ accessProfile, children, initialSetup }: Omit<Prop
   const activeOperationId = useRef(initialSetup?.operationId ?? "");
   const extensionsRef = useRef(extensions);
   extensionsRef.current = extensions;
+  const snapshotRef = useRef(snapshot);
+  snapshotRef.current = snapshot;
 
   const refresh = useCallback(async (
     showLoading = false,
@@ -303,20 +309,22 @@ function WorkspaceSetupFlow({ accessProfile, children, initialSetup }: Omit<Prop
     });
   }), []);
 
+  const selectedPackId = draftState.draft?.packId ?? snapshot?.clientSetup?.plan?.pack.id;
   const catalogResult = useMemo<CatalogResult>(() => {
-    if (!snapshot?.localPackages || extensions.loading) return { catalog: [], pack: null, error: "", warning: "" };
+    if (!snapshot?.localPackages || extensions.loading) return { catalog: [], pack: null, packs: [], error: "", warning: "" };
     try {
-      return buildCatalog(snapshot.localPackages, extensions, snapshot.clientSetup);
+      return buildCatalog(snapshot.localPackages, extensions, snapshot.clientSetup, selectedPackId);
     } catch (error) {
       console.error("Workspace setup catalog was refused", error);
       return {
         catalog: [],
         pack: null,
+        packs: [],
         error: "The local setup catalog could not be verified.",
         warning: "",
       };
     }
-  }, [extensions, snapshot]);
+  }, [extensions, snapshot, selectedPackId]);
 
   const matrix = useMemo(() => (
     snapshot ? resolveGateMatrix(snapshot, draftState.draft, catalogResult, extensions) : null
@@ -391,10 +399,11 @@ function WorkspaceSetupFlow({ accessProfile, children, initialSetup }: Omit<Prop
     allowSignIn = false,
   ): Promise<void> => {
     if (inFlight.current) return inFlight.current;
+    const setupPack = setup.plan ? findWorkspacePack(snapshotRef.current?.localPackages ?? null, setup.plan.pack.id) : null;
     setApplyState(allowSignIn ? {
       ...savedSetupProgress(setup),
-      label: "Connecting ChatGPT",
-      detail: "Finish signing in in your browser. Octopus will continue once your account is verified.",
+      label: `Connecting ${providerName(setupPack)}`,
+      detail: "Finish signing in. Octopus will continue once your account is verified.",
     } : savedSetupProgress(setup));
     activeOperationId.current = setup.operationId;
     let resumedDraft: WorkspaceSetupDraft | null = null;
@@ -409,12 +418,11 @@ function WorkspaceSetupFlow({ accessProfile, children, initialSetup }: Omit<Prop
         );
         resumedDraft = currentDraft;
       }
-      const resumed = await resumeClientSetup(setup.operationId, { allowSignIn });
-      return resumed.status === "in_progress" && chatgptSignInCompleted() ? verifyExistingSignIn(setup.operationId) : resumed;
+      return resumeClientSetup(setup.operationId, { allowSignIn, verifyAccount: true });
     }).then(async (completed) => {
       if (completed.status === "in_progress") {
         await refresh(false);
-        setApplyState(AWAITING_SIGN_IN);
+        setApplyState(awaitingSignIn(setupPack));
         return;
       }
       await refresh(false, (proven) => proveCompletedClientSetup(completed, proven));
@@ -439,7 +447,9 @@ function WorkspaceSetupFlow({ accessProfile, children, initialSetup }: Omit<Prop
         percent: null,
         error: error instanceof ProductSetupError
           ? error.productMessage
-          : "Octopus could not finish the saved setup. Nothing was marked ready without proof.",
+          : allowSignIn && error instanceof Error && error.message
+            ? error.message
+            : "Octopus could not finish the saved setup. Nothing was marked ready without proof.",
       });
     }).finally(() => {
       activeOperationId.current = "";
@@ -543,7 +553,7 @@ function WorkspaceSetupFlow({ accessProfile, children, initialSetup }: Omit<Prop
     return (
       <GateState
         action={applyState.state === "awaiting_sign_in" && snapshot.clientSetup
-          ? <OcButton variant="primary" onClick={() => void resumeCurrent(snapshot.clientSetup!, draftState.draft, true)}>Sign in with ChatGPT</OcButton>
+          ? <OcButton variant="primary" onClick={() => void resumeCurrent(snapshot.clientSetup!, draftState.draft, true)}>{`Sign in to ${providerName(findWorkspacePack(snapshot.localPackages, snapshot.clientSetup.plan.pack.id))}`}</OcButton>
           : applyState.state === "failed" && snapshot.clientSetup
           ? <OcButton onClick={() => void resumeCurrent(snapshot.clientSetup!)}>Try again</OcButton>
           : undefined}
@@ -575,6 +585,8 @@ function WorkspaceSetupFlow({ accessProfile, children, initialSetup }: Omit<Prop
       catalogLoading={extensions.loading}
       draft={draft}
       provider={catalogResult.pack?.setupProvider ?? null}
+      providerChoices={catalogResult.packs.map((pack) => ({ packId: pack.id, label: providerName(pack) }))}
+      selectedPackId={catalogResult.pack?.id ?? ""}
       agentPresets={catalogResult.pack?.recipe.agent_presets ?? []}
       onApply={apply}
       onSignIn={async () => {
@@ -611,7 +623,7 @@ async function performApply({
 }): Promise<boolean> {
   const current = await refresh();
   assertApplyBoundary(current, draft.operationId);
-  const pack = requireWorkspacePack(current.localPackages);
+  const pack = selectWorkspacePack(current.localPackages, draft.packId);
   const selection = compileApplySelection(draft, pack, extensions.current);
   const plan = await compileClientSetupPlan(draft, pack, selection);
   assertConfiguredRequestBoundary(current, draft.operationId, plan.workspace.request_digest);
@@ -621,17 +633,12 @@ async function performApply({
   } else if (stableSetupJson(setup.plan) !== stableSetupJson(plan)) {
     throw new ProductSetupError("Saved setup choices differ from the immutable setup already in progress. Octopus kept the earlier plan instead of replacing it.");
   }
-  const completed = setup.status === "complete"
+  const finished = setup.status === "complete"
     ? setup
-    : await resumeClientSetup(draft.operationId);
-  let finished = completed;
-  if (finished.status === "in_progress" && chatgptSignInCompleted()) {
-    await refresh(false);
-    finished = await verifyExistingSignIn(draft.operationId);
-  }
+    : await resumeClientSetup(draft.operationId, { verifyAccount: true });
   if (finished.status === "in_progress") {
     await refresh(false);
-    setApplyState(AWAITING_SIGN_IN);
+    setApplyState(awaitingSignIn(pack));
     return false;
   }
   await refresh(false, (proven) => proveCompletedClientSetup(finished, proven, draft));
@@ -643,10 +650,6 @@ async function performApply({
     error: "",
   });
   return true;
-}
-
-async function verifyExistingSignIn(operationId: string): Promise<OctopusClientSetupState> {
-  return resumeClientSetup(operationId, { allowSignIn: true });
 }
 
 async function compileClientSetupPlan(
@@ -740,7 +743,7 @@ function assertSavedDraftMatchesSetup(
   if (extensions.loading) {
     throw new ProductSetupError("Client additions are still being checked. Octopus did not resume before those choices were verified.");
   }
-  const pack = requireWorkspacePack(snapshot.localPackages);
+  const pack = selectWorkspacePack(snapshot.localPackages, draft.packId ?? setup.plan.pack.id);
   const selection = compileApplySelection(draft, pack, extensions);
   const expected = compileClientSetupPlanWithDigest(
     draft,
@@ -957,8 +960,9 @@ function buildCatalog(
   localPackages: LocalPackagesProjection,
   extensions: ClientExtensionRegistryState,
   setup: OctopusClientSetupState | null,
+  packId: string | undefined,
 ): CatalogResult {
-  const pack = requireWorkspacePack(localPackages);
+  const pack = selectWorkspacePack(localPackages, packId);
   const extensionById = new Map(extensions.extensions.map((extension) => [extension.manifest.id, extension]));
   const providerStatus = findProviderCredentialStatus(pack, extensions);
   const components: WorkspaceSetupCatalogCapability["components"] = pack.components.map((component) => ({
@@ -1039,6 +1043,7 @@ function buildCatalog(
   return {
     catalog,
     pack,
+    packs: localPackages.packs,
     error: "",
     warning: pack.setupProvider?.modelCatalogError || (localPackages.errors.length || extensions.errors.length
       ? "Some optional local capability records could not be verified."
@@ -1262,11 +1267,18 @@ function providerStatusText(
   return "Provider sign-in status is currently unavailable.";
 }
 
-function requireWorkspacePack(localPackages: LocalPackagesProjection | null): WorkspacePack {
-  if (!localPackages || localPackages.packs.length !== 1) {
-    throw new ProductSetupError("Octopus needs exactly one local workspace setup pack before Welcome can continue.");
+function findWorkspacePack(localPackages: LocalPackagesProjection | null, packId: string): WorkspacePack | null {
+  return localPackages?.packs.find((pack) => pack.id === packId) ?? null;
+}
+
+function selectWorkspacePack(localPackages: LocalPackagesProjection | null, packId: string | undefined): WorkspacePack {
+  if (!localPackages?.packs.length) {
+    throw new ProductSetupError("Octopus needs a local workspace setup pack before Welcome can continue.");
   }
-  return localPackages.packs[0];
+  if (packId === undefined) return localPackages.packs[0];
+  const pack = findWorkspacePack(localPackages, packId);
+  if (!pack) throw new ProductSetupError("The chosen model provider is no longer available. Choose another provider.");
+  return pack;
 }
 
 function requiredExtension(

@@ -13,7 +13,7 @@ import { SettingsHeading } from "./SettingsHeading";
 import { MarkActivitySettingsRow, NotificationSoundSettingsRow } from "./NotificationSettingsSection";
 
 import { ProviderSummary, useDeclaredProviders } from "./SettingsProviderState";
-import { readProjection, saveSetupFile } from "../../projectionClient";
+import { readCurrentClientSetup, readProjection, saveSetupFile } from "../../projectionClient";
 import { serializeSetupFile, setupFileFromHome, setupFileName } from "../../onboarding/setupFile";
 import { useClientExtensions } from "../../extensions/useClientExtensions";
 export function GeneralSection({ accessProfile, surfaces }: { accessProfile: OctopusClientAccessProfile; surfaces: ClientSurfaceDescriptor[] }) {
@@ -40,11 +40,12 @@ export function GeneralSection({ accessProfile, surfaces }: { accessProfile: Oct
   async function exportHomeSetup() {
     setSetupExport({ busy: true, note: "", error: "" });
     try {
-      const [scope, localPackages, applications, drivers] = await Promise.all([
+      const [scope, localPackages, applications, drivers, clientSetup] = await Promise.all([
         readProjection("projection.operator.os.scope"),
         readProjection("projection.operator.os.local_packages"),
         readProjection("projection.operator.os.applications"),
         readProjection("projection.operator.os.drivers"),
+        readCurrentClientSetup(),
       ]);
       const file = setupFileFromHome({
         scope,
@@ -52,6 +53,7 @@ export function GeneralSection({ accessProfile, surfaces }: { accessProfile: Oct
         applications,
         drivers,
         installedExtensionIds: new Set(extensions.extensions.filter((extension) => extension.installed).map((extension) => extension.manifest.id)),
+        setupPackId: clientSetup?.plan.pack.id ?? null,
       });
       const saved = await saveSetupFile({ text: serializeSetupFile(file), suggestedName: setupFileName(file) });
       setSetupExport({ busy: false, note: saved.saved ? `Saved ${saved.name}.` : "", error: "" });

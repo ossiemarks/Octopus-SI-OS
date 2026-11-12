@@ -194,10 +194,14 @@ export async function beginClientSetup(request: OctopusClientSetupBeginRequest):
   return host.clientSetupBegin(request);
 }
 
-export async function resumeClientSetup(operationId: string, options: { allowSignIn?: boolean } = {}): Promise<OctopusClientSetupState> {
+export async function resumeClientSetup(
+  operationId: string,
+  options: { allowSignIn?: boolean; verifyAccount?: boolean } = {},
+): Promise<OctopusClientSetupState> {
   const host = window.octopusTransport;
   if (!host?.clientSetupResume) throw new Error("Client setup is available only in the live desktop client.");
-  return host.clientSetupResume({ operationId, ...(options.allowSignIn ? {} : { stopBefore: "provider" as const }) });
+  if (options.allowSignIn) return host.clientSetupResume({ operationId });
+  return host.clientSetupResume({ operationId, stopBefore: options.verifyAccount ? "provider_sign_in" : "provider" });
 }
 
 export function onApplicationLifecycleProgress(listener: (progress: OctopusApplicationLifecycleProgress) => void): () => void {

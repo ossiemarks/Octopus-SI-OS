@@ -12,6 +12,8 @@ const OPERATION_ID = /^[A-Za-z0-9_-]{8,96}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
 const STEPS = ["packages", "extensions", "workspace", "provider"];
+const PROBE_ONLY_STOPS = { provider: "provider_sign_in" };
+const STOP_POINTS = new Set(["provider", ...Object.values(PROBE_ONLY_STOPS)]);
 const PROOF_KIND = {
   packages: "package_install_evidence",
   extensions: "extension_lifecycle_receipt",
@@ -105,7 +107,7 @@ function createClientSetupStore(options) {
 
   async function resume(operationIdValue, resumeOptions = {}) {
     const stopBefore = typeof operationIdValue === "object" ? operationIdValue?.stopBefore : undefined;
-    if (stopBefore !== undefined && stopBefore !== "provider") throw new Error("Unsupported client setup stop point.");
+    if (stopBefore !== undefined && !STOP_POINTS.has(stopBefore)) throw new Error("Unsupported client setup stop point.");
     const operationId = requiredOperationId(operationIdValue?.operationId ?? operationIdValue);
     return joinClientSetupResume(root, operationId, stopBefore, resumeOptions.onProgress, (onProgress) =>
       withClientSetupLock(root, () => resumeOperation(operationId, stopBefore, onProgress), executionTails));
@@ -134,6 +136,9 @@ function createClientSetupStore(options) {
       } catch (error) {
         operation = await recordFailure(operation, step, error);
         throw error;
+      }
+      if (!proof && stopBefore !== undefined && stopBefore === PROBE_ONLY_STOPS[step]) {
+        return projectOperation(operation);
       }
       if (!proof) {
         reportProgress(onProgress, operationId, step, "applying", Math.round((index + 0.35) * 90 / STEPS.length));
