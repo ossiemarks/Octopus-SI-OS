@@ -10,6 +10,7 @@
       "system_worker_system_review",
       "world_operator_chat",
       "world_provider_codex",
+      "world_provider_claude_cli",
       "world_provider_chatgpt",
       "system_gui",
       "system_context",
