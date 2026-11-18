@@ -265,6 +265,9 @@ impl InterruptedNativeCellWait {
 
 fn pending_correlation(pending: &CodexPendingContinuity) -> Option<&str> {
     match pending {
+        CodexPendingContinuity::DynamicTool { native_operation: Some(operation), .. } => {
+            operation.get("call_id").and_then(serde_json::Value::as_str)
+        }
         CodexPendingContinuity::DynamicTool { call_id, .. }
         | CodexPendingContinuity::InterfaceOperation { call_id, .. } => Some(call_id),
         CodexPendingContinuity::Operator { .. } => None,

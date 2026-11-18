@@ -588,6 +588,21 @@ async fn settled_native_history_reseeds_only_after_exact_result_proof() {
     rows[2]["payload"]["call_id"]=serde_json::json!("unrelated-function");
     std::fs::write(&path,rows.iter().map(|row|format!("{row}\n")).collect::<String>()).unwrap();
     assert!(prove(&settled,&session).unwrap_err().to_string().contains("exact pending correlation"));
+    let mut native = session.clone();
+    native[1].payload["native_terminal_source_continuity"]["pending"]["native_operation"] = serde_json::json!(NativePending {
+        call_id:"native-create-call".into(), operation_name:"create_run".into(), source_run:"run-a".into(),
+        effect:crate::run_affordances::NativeEffect { tool:"interval.union".into(), correlation_id:"inner-effect".into(), arguments:serde_json::json!({}) },
+        state:crate::run_affordances::NativePhase::AppliedSeeding {
+            created:serde_json::json!({"run_id":"run-b"}), files:vec![],
+            write_receipt:serde_json::json!({"receipt":"effect-performed-once"}), validation:serde_json::json!({"ok":true}),
+        },
+    });
+    rows[2]["payload"]["call_id"]=serde_json::json!("native-create-call");
+    std::fs::write(&path,rows.iter().map(|row|format!("{row}\n")).collect::<String>()).unwrap();
+    assert!(prove(&settled,&native).unwrap().is_some());
+    rows[2]["payload"]["call_id"]=serde_json::json!("inner-effect");
+    std::fs::write(&path,rows.iter().map(|row|format!("{row}\n")).collect::<String>()).unwrap();
+    assert!(prove(&settled,&native).unwrap_err().to_string().contains("exact pending correlation"));
     let mut rows=String::from_utf8(bytes).unwrap().lines().map(|line|serde_json::from_str::<serde_json::Value>(line).unwrap()).collect::<Vec<_>>();
     rows.push(serde_json::json!({"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"outer-exec","output":"Script running with cell ID 1\nWall time 4.1 seconds\nOutput:\n"}}));
     rows.push(serde_json::json!({"type":"response_item","payload":{"type":"function_call","call_id":"outer-wait","name":"wait","arguments":"{\"cell_id\":\"1\",\"max_tokens\":12000,\"yield_time_ms\":20000}"}}));
